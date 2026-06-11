@@ -1,0 +1,134 @@
+name: Build Installers
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'build/scripts/**'
+      - '.github/workflows/build-installers.yml'
+  workflow_dispatch:
+  release:
+    types: [created, published]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    name: Build macOS DMG Installer
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Make build script executable
+        run: chmod +x build/scripts/build.sh
+      
+      - name: Build DMG installer
+        run: ./build/scripts/build.sh
+      
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-installer
+          path: dist/AuroraOS-*.dmg
+          retention-days: 30
+      
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/AuroraOS-*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    runs-on: windows-latest
+    name: Build Windows EXE Installer
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install NSIS
+        run: |
+          choco install nsis -y
+      
+      - name: Run build script
+        shell: powershell
+        run: .\build\scripts\build.ps1 -Version "1.0.0"
+      
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe-installer
+          path: dist/AuroraOS-*.exe
+          retention-days: 30
+      
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip-archive
+          path: dist/AuroraOS-*.zip
+          retention-days: 30
+      
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/AuroraOS-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-checksums:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    name: Create Checksums
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+      
+      - name: Create SHA256 checksums
+        run: |
+          mkdir -p checksums
+          cd artifacts
+          find . -type f \( -name "*.dmg" -o -name "*.exe" -o -name "*.zip" \) -exec sha256sum {} \; > ../checksums/SHA256SUMS
+          cat ../checksums/SHA256SUMS
+      
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: checksums/SHA256SUMS
+          retention-days: 30
+      
+      - name: Upload checksums to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: checksums/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-artifacts:
+    needs: [create-checksums]
+    runs-on: ubuntu-latest
+    name: Publish Build Summary
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+      
+      - name: Create build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Generated Installers" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **macOS**: AuroraOS-1.0.0.dmg" >> $GITHUB_STEP_SUMMARY
+          echo "- **Windows**: AuroraOS-1.0.0.exe" >> $GITHUB_STEP_SUMMARY
+          echo "- **Windows (Alternative)**: AuroraOS-1.0.0.zip" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download from artifacts or GitHub Releases." >> $GITHUB_STEP_SUMMARY
