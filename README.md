@@ -159,4 +159,4 @@ This specification includes:
 
 ---
 
-**AuroraOS 1.0 - The Evolution of Sierra. The Future of OS Design.**
+**AuroraOS 1.0 - The Design of Aurora.**
